@@ -1,8 +1,8 @@
 #import <UIKit/UIKit.h>
 #import <Security/Security.h>
 
-// 1. مسح جميع بيانات الـ Keychain الخاصة بالتطبيق
-void resetKeychain() {
+// دالة مسح الـ Keychain المسؤولة عن حفظ مفاتيح التفعيل وتوكين الوقت
+void resetModKeychain() {
     NSArray *secClasses = @[
         (__bridge id)kSecClassGenericPassword,
         (__bridge id)kSecClassInternetPassword,
@@ -17,16 +17,19 @@ void resetKeychain() {
     }
 }
 
-// 2. مسح شجرة مجلدات الـ Sandbox بالكامل
-void wipeSandboxData() {
-    // مسح الـ UserDefaults بالكامل
+// دالة المسح الشاملة للملفات والإعدادات
+void purgeAllModData() {
+    // 1. مسح الـ UserDefaults
     NSString *appDomain = [[NSBundle mainBundle] bundleIdentifier];
     [[NSUserDefaults standardUserDefaults] removePersistentDomainForName:appDomain];
     [[NSUserDefaults standardUserDefaults] synchronize];
 
-    // تحديد كافة المسارات الهامة داخل حاوية التطبيق
+    // 2. مسح الـ Keychain
+    resetModKeychain();
+
+    // 3. مسح جميع أدلة البيانات المحلية (Documents, Caches, App Support, tmp)
     NSString *homeDir = NSHomeDirectory();
-    NSArray *directoriesToWipe = @[
+    NSArray *directories = @[
         [homeDir stringByAppendingPathComponent:@"Documents"],
         [homeDir stringByAppendingPathComponent:@"Library/Caches"],
         [homeDir stringByAppendingPathComponent:@"Library/Application Support"],
@@ -34,32 +37,40 @@ void wipeSandboxData() {
         [homeDir stringByAppendingPathComponent:@"tmp"]
     ];
 
-    NSFileManager *fileManager = [NSFileManager defaultManager];
-    
-    for (NSString *dirPath in directoriesToWipe) {
-        NSError *error = nil;
-        NSArray *files = [fileManager contentsOfDirectoryAtPath:dirPath error:&error];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    for (NSString *dir in directories) {
+        NSArray *files = [fm contentsOfDirectoryAtPath:dir error:nil];
         for (NSString *file in files) {
-            // تخطي ملفات النظام الأساسية التي قد تسبب انهياراً فورياً
-            if ([file isEqualToString:@"Preferences"]) continue; 
+            // تجنب حذف مجلد Preferences نفسه لتفادي انهيار النظام المباشر
+            if ([file isEqualToString:@"Preferences"]) continue;
             
-            NSString *fullPath = [dirPath stringByAppendingPathComponent:file];
-            [fileManager removeItemAtPath:fullPath error:nil];
+            NSString *filePath = [dir stringByAppendingPathComponent:file];
+            [fm removeItemAtPath:filePath error:nil];
         }
     }
 }
 
-// تنفيذ المسح الشامل فور تحميل التويك بالذاكرة
-__attribute__((constructor)) static void fullResetOnLaunch() {
-    resetKeychain();
-    wipeSandboxData();
+// Hook على مستوى دورة حياة التطبيق عند الخروج أو الانتقال للخلفية
+%hook UIApplication
+
+- (void)applicationDidEnterBackground:(UIApplication *)application {
+    %orig;
+    purgeAllModData();
 }
 
-// مسح إضافي عند إنزال التطبيق للخلفية
+- (void)applicationWillTerminate:(UIApplication *)application {
+    %orig;
+    purgeAllModData();
+}
+
+%end
+
+// Hook حديث لدعم نظام iOS 13+ (SceneDelegate) عند إنزال اللعبة للخلفية
 %hook UIWindowScene
+
 - (void)_willResignActive {
     %orig;
-    resetKeychain();
-    wipeSandboxData();
+    purgeAllModData();
 }
+
 %end
