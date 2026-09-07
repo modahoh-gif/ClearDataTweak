@@ -9,4 +9,4 @@ ClearDataTweak_FILES = Tweak.x
 ClearDataTweak_CFLAGS = -fobjc-arc
 ClearDataTweak_FRAMEWORKS = UIKit Foundation Security
 
-include $(THEOS_MAKEFILE_PATH)/tweak.mk
+include $(THEOS)/makefiles/tweak.mk
