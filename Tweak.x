@@ -1,25 +1,38 @@
 #import <UIKit/UIKit.h>
-#import <Security/Security.h>
 
-%hook UnityAppController
+void clearAppStoreData() {
+    // 1. مسح جميع إعدادات NSUserDefaults
+    NSString *appDomain = [[NSBundle mainBundle] bundleIdentifier];
+    [[NSUserDefaults standardUserDefaults] removePersistentDomainForName:appDomain];
+    [[NSUserDefaults standardUserDefaults] synchronize];
 
-- (void)applicationDidEnterBackground:(UIApplication *)application {
-    NSString *docsDir = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
-    NSString *libDir = [NSSearchPathForDirectoriesInDomains(NSLibraryDirectory, NSUserDomainMask, YES) firstObject];
-    NSString *tmpDir = NSTemporaryDirectory();
+    // 2. مسح ملفات Caches و Documents و tmp
+    NSArray *paths = @[
+        [NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES) firstObject],
+        [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject],
+        NSTemporaryDirectory()
+    ];
 
-    NSFileManager *fm = [NSFileManager defaultManager];
-    [fm removeItemAtPath:docsDir error:nil];
-    [fm removeItemAtPath:libDir error:nil];
-    [fm removeItemAtPath:tmpDir error:nil];
-
-    NSDictionary *query = @{
-        (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
-        (__bridge id)kSecAttrService: @"com.miniclip.8ballpoolmult"
-    };
-    SecItemDelete((__bridge CFDictionaryRef)query);
-
-    %orig;
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    for (NSString *path in paths) {
+        NSError *error = nil;
+        NSArray *files = [fileManager contentsOfDirectoryAtPath:path error:&error];
+        for (NSString *file in files) {
+            NSString *fullPath = [path stringByAppendingPathComponent:file];
+            [fileManager removeItemAtPath:fullPath error:nil];
+        }
+    }
 }
 
+// ينفذ المسح فور تحميل التويك داخل الذاكرة عند فتح التطبيق
+__attribute__((constructor)) static void initialize() {
+    clearAppStoreData();
+}
+
+// Hook لضمان المسح أيضاً فور تحويل التطبيق للخلفية
+%hook UIWindowScene
+- (void)_willResignActive {
+    %orig;
+    clearAppStoreData();
+}
 %end
